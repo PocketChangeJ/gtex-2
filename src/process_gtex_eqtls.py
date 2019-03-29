@@ -100,7 +100,7 @@ def parse_eqtl_file(fp):
         fp: eQTL filepath
 
     returns
-        a data frame containing the parsed file. The frame only contains the 
+        a data frame containing the parsed file. The frame only contains the
         variant_id and gene_id columns.
     """
 
