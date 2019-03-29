@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
-## file: process_gtex_eqtls.py
-## desc: Parses GTEx eQTL data sets and formats them for later use with GeneWeaver.
+## file: merge_snp_ids.py
+## desc: Use the NCBI RsMergeArch table to merge old SNP identifiers into their 
+##       current versions.
 ## auth: TR
 
 from __future__ import print_function
 from sys import argv
 import logging
+import numpy as np
 import os
 import pandas as pd
 import re
@@ -121,19 +123,19 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
 
     ## cmd line shit
-    usage = '%s [options] <eqtls> <table> <output>' % argv[0]
+    usage = '%s [options] <snps> <merge> <output>' % argv[0]
     parse = ArgumentParser(usage=usage)
 
     parse.add_argument(
-        'eqtls',
+        'snps',
         nargs='?',
-        help='file containing significant GTEx eQTL variant-gene pairs'
+        help='tab delimited file containing SNP identifiers'
     )
 
     parse.add_argument(
-        'table',
+        'merge',
         nargs='?',
-        help='GTEx eQTL lookup table'
+        help='RsMergeArch table from NCBI'
     )
 
     parse.add_argument(
@@ -143,51 +145,13 @@ if __name__ == '__main__':
     )
 
     parse.add_argument(
-        '-a',
-        '--annotations',
+        '-c',
+        '--column',
         action='store',
-        dest='annotations',
-        default='',
-        metavar='<file>',
+        default='rsid',
+        dest='column',
         type=str,
-        help='use the given GTEx annotations to annotate tissues'
-    )
-
-    parse.add_argument(
-        '-d',
-        '--dir',
-        action='store_true',
-        dest='dir',
-        help='use a directory of eQTL datasets instead of a single file'
-    )
-
-    parse.add_argument(
-        '-f',
-        '--filter',
-        action='store',
-        dest='filter',
-        metavar='<list>',
-        help='filter eQTLs based on tissue groups (requires -a/--annotations)'
-    )
-
-    parse.add_argument(
-        '-t',
-        '--tissue',
-        action='store',
-        dest='tissue',
-        default='unknown',
-        metavar='<tissue>',
-        help='annotate eQTLs using the given tissue'
-    )
-
-    parse.add_argument(
-        '-u',
-        '--unmapped',
-        action='store',
-        dest='unmapped',
-        default='unmapped-gtex-eqtls.tsv',
-        metavar='<file>',
-        help='store unmapped eQTLs at the given filepath'
+        help='column name in the <snps> file containing rsIDs (default = rsid)'
     )
 
     parse.add_argument(
@@ -206,14 +170,14 @@ if __name__ == '__main__':
     LOG.setLevel(logging.INFO if args.verbose else logging.ERROR)
     LOG.addHandler(conlog)
 
-    if not args.eqtls:
-        LOG.error('[!] You need to provide an eQTL dataset')
+    if not args.snps:
+        LOG.error('[!] You need to provide a file containing SNPs')
         LOG.error('')
         parse.print_help()
         exit(1)
 
-    if not args.table:
-        LOG.error('[!] You need to provide a GTEx lookup table')
+    if not args.merge:
+        LOG.error('[!] You need to provide a merge table from NCBI')
         LOG.error('')
         parse.print_help()
         exit(1)
@@ -224,92 +188,61 @@ if __name__ == '__main__':
         parse.print_help()
         exit(1)
 
-    ## Get eQTL files
-    if args.dir:
-        LOG.info('[+] Enemurating eQTL datasets')
+    LOG.info('[+] Reading merge table')
 
-        eqtl_files = find_eqtl_files(args.eqtls)
-    else:
-        eqtl_files = [args.eqtls]
+    ## Read in the merge table
+    ## Table description can be found: 
+    ## https://www.ncbi.nlm.nih.gov/projects/SNP/snp_db_table_description.cgi?t=RsMergeArch
+    mtable = pd.read_csv(
+        args.merge,
+        sep='\t',
+        compression='infer',
+        header=None,
+        names=[
+            'high',
+            'low',
+            'build',
+            'orien',
+            'created',
+            'updated',
+            'current',
+            'o2c',
+            'comment'
+        ]
+    )
+    
+    # We really only need high and current for the mapping procedure
+    mtable = mtable[['high', 'current']]
 
-    if not eqtl_files:
-        LOG.error('[!] No eQTL datasets were found')
-        exit(1)
+    LOG.info('[+] Reading SNPs dataset')
 
-    LOG.info('[+] Parsing lookup table')
+    ## Read in the snps dataset
+    snps = pd.read_csv(args.snps, sep='\t')
 
-    lookup = parse_lookup_file(args.table)
+    ## Strip the rs prefix, convert to int
+    snps[args.column] = snps[args.column].str.strip(to_strip='rs')
+    snps[args.column] = snps[args.column].astype(np.int64)
 
-    ## Parse annotations if necessary
-    if args.annotations:
-        LOG.info('[+] Parsing annotations')
+    LOG.info('[+] Updating old identifiers')
 
-        annotations = parse_annotations_file(args.annotations)
-    else:
-        annotations = pd.DataFrame()
+    ## Merge frames based on old SNP identifiers
+    snps = snps.join(mtable.set_index('high'), on=args.column, how='left')
 
-    eqtl_list = []
-    unmapped_list = []
+    criterion = snps.current.notna()
 
-    for fl in eqtl_files:
-        LOG.info('[+] Parsing %s', fl)
+    ## Update IDs if necessary
+    snps.loc[criterion, args.column] = snps.loc[criterion, 'current']
 
-        eqtls = parse_eqtl_file(fl)
+    snps = snps.drop(columns='current')
 
-        eqtls['tissue'] = args.tissue
-        eqtls['tissue_group'] = args.tissue
+    ## Add the rs prefix back in
+    snps[args.column] = 'rs' + snps[args.column].astype(np.int64).astype('str')
 
-        ## Add a tissue if possible
-        if not annotations.empty:
-
-            for row in annotations.itertuples():
-
-                ## Try to match to an annotation
-                if re.search(row.tissue_str, fl, flags=re.IGNORECASE):
-                    eqtls['tissue'] = row.tissue_name
-                    eqtls['tissue_group'] = row.tissue_group
-
-                    break
-            else:
-                LOG.warn('[-] Could not discern tissue type for %s', fl)
-
-            ## Filter if necessary. The way we do this is unecessary but w/e
-            if args.filter:
-                eqtls = eqtls[eqtls.tissue_group.str.contains(args.filter, case=False)]
-
-        ## Map GTEx eQTL IDs to dbSNP references
-        eqtls['rsid'] = eqtls.variant_id.map(lambda v: lookup.get(v))
-
-        ## Seprate and remove eQTLs that didn't map to an rsID
-        unmapped = eqtls[eqtls.rsid.isnull()]
-        eqtls = eqtls[eqtls.rsid.notnull()]
-
-        eqtl_list.append(eqtls)
-        unmapped_list.append(unmapped)
-
-    ## Merge dataframes
-    eqtl_list = pd.concat(eqtl_list)
-    unmapped_list = pd.concat(unmapped_list)
-
-    LOG.info('[+] Saving eQTL data')
-
-    eqtl_list.to_csv(
+    snps.to_csv(
         args.output,
         sep='\t',
-        columns=['variant_id', 'rsid', 'gene_id', 'p', 'tissue', 'tissue_group'],
         index=False
     )
-
-    ## If there are unmapped eQTLs, save those as well
-    if not unmapped_list.empty:
-        LOG.warn('[!] Some eQTLs were not mapped to dbSNP reference identifiers')
-
-        unmapped_list.to_csv(
-            args.unmapped,
-            sep='\t',
-            columns=['variant_id', 'gene_id', 'p', 'tissue', 'tissue_group'],
-            index=False
-        )
 
     LOG.info('[+] Done!')
 
