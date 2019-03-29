@@ -1,0 +1,21 @@
+[flake8]
+
+exclude = 
+    ## Ignore the .git directory
+    .git
+
+ignore =
+    ## Too many leading #...
+    E266,
+    ## Expected 2 blank lines...
+    E302,
+    ## Expected 2 blank lines...
+    E305,
+    ## Module level import not at top...
+    E402,
+    ## Line too long... our max length is 90 characters
+    E501,
+    ## Blank line at end of file...
+    W391,
+    ## Invalid escape sequence
+    W605

@@ -1,0 +1,20 @@
+
+## Ignore the following shit:
+
+__pycache__/**
+__pycache__
+
+## super secret stuffs
+*.cfg
+
+## stupid compiled python files
+*.pyc
+
+## vim swp files
+*.sw*
+
+## Output/input
+*.gz
+*.tsv
+*.txt
+
