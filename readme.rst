@@ -9,6 +9,7 @@ A small collection of scripts to process and format GTEx__ eQTL datasets.
 The file ``src/process-brain-eqtls.sh`` contains a sample processing pipeline brain
 tissue eQTLs.
 
+
 Usage
 -----
 
@@ -41,4 +42,23 @@ Then use the merge script to update GTEx SNP IDs:
 .. code:: bash
 
     $ ./src/merge_snp_ids.py processed-gtex-eqtls.tsv data/dbsnp-merge-table.bcp.gz processed-gtex-eqtls-v150.tsv
+
+
+Requirements and installation
+-----------------------------
+
+The following software and packages are required:
+
+- Python 2.7/3.6/3.7
+- NumPy__
+- Pandas__
+
+.. __: https://www.numpy.org/
+.. __: https://pandas.pydata.org/
+
+To install, use pip:
+
+.. code:: bash
+
+    $ pip install -r requirements.txt
 
