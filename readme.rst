@@ -6,8 +6,8 @@ A small collection of scripts to process and format GTEx__ eQTL datasets.
 
 .. __: https://gtexportal.org/home/index.html
 
-The file ``src/process-brain-eqtls.sh`` contains a sample processing pipeline brain
-tissue eQTLs.
+The file ``src/process-brain-eqtls.sh`` contains a sample processing pipeline for 
+brain tissue eQTLs.
 
 
 Usage
@@ -27,7 +27,7 @@ reference identifiers:
 
     $ python src/process_gtex_eqtls.py -d -a data/gtex-v7-annotations.tsv data/gtex-eqtls data/gtex-lookup-table.tsv.gz processed-gtex-eqtls.tsv
 
-GTEx used dbSNP v.147 to annotate eQTL variants.
+GTEx uses dbSNP v.147 to annotate eQTL variants.
 If you need a more recent version of dbSNP (e.g., v.150) you can use the merge
 scripts to update SNP identifiers.
 
