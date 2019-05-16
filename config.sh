@@ -10,7 +10,7 @@ logger() { printf "[%s] %s\n" "$(date '+%Y.%m.%d %H:%M:%S')" "$*" >&2; }
 ## executed
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 ## Source directory
-SRC_DIR="$SELF_DIR/src"
+SRC_DIR="$SELF_DIR/gtex"
 ## Data directory
 DATA_DIR="$SELF_DIR/data"
 
