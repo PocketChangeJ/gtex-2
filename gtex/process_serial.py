@@ -372,7 +372,7 @@ def save_eqtls(eqtls: List[pd.DataFrame], outdir: str = globe._dir_data_processe
     for (group, df) in eqtls.groupby(['tissue_group']):
 
         ## Format group name for output
-        group = f"{group.replace(' ', '-')}.tsv"
+        group = f"{group.replace(' ', '-')}.tsv".lower()
 
         ## Output filepath
         outpath = Path(outdir).joinpath(group)
@@ -503,14 +503,14 @@ def run_processing_step(client: Client = None) -> Dict[str, Future]:
         future_eqtls.append(final_eqtls)
 
         #future_eqtls.append(final_eqtls)
-        break
 
     ## Remove lookup and merge tables which are pretty big
     del lookup
     del merge
 
     _logger.info('saving eqtls')
-    save_eqtls([future_eqtls[0].compute()])
+    #save_eqtls([future_eqtls[0].compute()])
+    save_eqtls(client.compute(future_eqtls))
     _logger.info('done saving eqtls')
 
     client.gather(future_eqtls)
