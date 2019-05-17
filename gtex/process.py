@@ -9,6 +9,7 @@ from dask.distributed import Client
 from dask.distributed import get_client
 from dask.distributed import Future
 from dask.distributed import LocalCluster
+from dask.distributed import wait
 from pathlib import Path
 from typing import Dict, List
 import dask.dataframe as dd
@@ -97,7 +98,7 @@ def parse_lookup_table(fp: str = globe._fp_lookup_table) -> pd.DataFrame:
         a mapping of GTEx variant IDs to dbSNP identifiers (rsID)
     """
 
-    df = dd.read_csv(fp, blocksize='250MB', sep='\t', dtype={'chr': str})
+    df = dd.read_csv(fp, blocksize='400MB', sep='\t', dtype={'chr': str})
 
     ## Rename ugly ass column name
     df = df.rename(columns={'rs_id_dbSNP147_GRCh37p13': 'rsid'})
@@ -111,8 +112,33 @@ def parse_lookup_table(fp: str = globe._fp_lookup_table) -> pd.DataFrame:
     ## Compute and return the pandas DF to the client node
     df = df.compute()
 
-    ## Convert to a dict
     return dict(zip(df.variant_id, df.rsid))
+    ## Convert to a dict
+    #return dict(zip(df.variant_id, df.rsid))
+    """
+    """
+
+    """
+    table = []
+
+    for df in pd.read_csv(fp, sep='\t', chunksize=4096):
+        #df = dd.read_csv(fp, blocksize='250MB', sep='\t', dtype={'chr': str})
+
+        ## Rename ugly ass column name
+        df = df.rename(columns={'rs_id_dbSNP147_GRCh37p13': 'rsid'})
+
+        ## Remove anything that doesn't have an rsID
+        df = df[df.rsid != '.']
+
+        ## Only keep the GTEx variant ID and the rsID
+        df = df[['variant_id', 'rsid']]
+
+        table.extend(zip(df.variant_id, df.rsid))
+        ## Compute and return the pandas DF to the client node
+        #df = df.compute()
+
+    return dict([(v, r) for v, r in table])
+    """
 
     #return df
     #table.extend(zip(df.variant_id, df.rsid))
@@ -169,6 +195,7 @@ def parse_merge_table(fp: str = globe._fp_dbsnp_table) -> pd.DataFrame:
         fp,
         blocksize='250MB',
         sep='\t',
+        assume_missing=True,
         header=None,
         names=[
             'high',
@@ -198,12 +225,16 @@ def annotate_tissue(annotations: pd.DataFrame, eqtls: pd.DataFrame) -> pd.DataFr
 
     ## Get the filename from the given set of eQTLs
     filename = eqtls.filename.loc[0]
+    _logger.info('filename: %s', filename)
 
     for annotation in annotations.itertuples():
+        #_logger.info('tissue_str: %s', annotation.tissue_str)
         ## Try to match the the filename and annotation
         if re.search(annotation.tissue_str, filename, re.IGNORECASE):
+            _logger.info('found tissue group')
             eqtls['tissue'] = annotation.tissue_name
             eqtls['tissue_group'] = annotation.tissue_group
+            break
 
     else:
         _logger.warning('Could not discern tissue type for %s', filename)
@@ -211,9 +242,11 @@ def annotate_tissue(annotations: pd.DataFrame, eqtls: pd.DataFrame) -> pd.DataFr
         eqtls['tissue'] = 'unknown'
         eqtls['tissue_group'] = 'unknown'
 
+    _logger.info('dropping filename column')
     ## The filename column is no longer needed
-    eqtls = eqtls.drop(['filename'], axis=1)
+    eqtls = eqtls.drop(columns='filename')
 
+    _logger.info('returning')
     return eqtls
 
 
@@ -228,10 +261,13 @@ def map_eqtl_rsids(lookup: Dict[str, str], eqtls: pd.DataFrame) -> pd.DataFrame:
     returns
     """
 
+    _logger.info('mapping eqtl rsIDs')
     ## Map to dbSNP references
-    eqtls['rsid'] = eqtls.variant_id.map(lambda v: lookup.get(v))
+    eqtls['variant_id'] = eqtls.variant_id.map(lambda v: lookup.get(v))
+    _logger.info('done mapping eqtl rsIDs')
 
-    return eqtls
+    print(eqtls.head())
+    return eqtls.iloc[:100]
     ## Keep tab on simple stats associated with each eQTL dataset (e.g. # of total SNPs,
     ## of SNPs that didn't map to rsIDs, etc.)
     #statistics = {
@@ -364,7 +400,11 @@ def run_processing_step(client: Client = None) -> Dict[str, Future]:
     ## Lookup and merge table parsing isn't submitted since we use a dask dataframe
     ## to parse them
     annotations = client.submit(parse_annotations)
+    #_logger.info(annotations.result().head())
     lookup = parse_lookup_table()
+    lookup = client.scatter(lookup)
+    #_logger.info(list(lookup.items())[:5])
+    #return
     merge = parse_merge_table()
 
     future_eqtls = []
@@ -378,14 +418,19 @@ def run_processing_step(client: Client = None) -> Dict[str, Future]:
             continue
 
         ## Parse the eQTLs
-        eqtls = client.submit(parse_eqtls, fp.name)
+        eqtls = client.submit(parse_eqtls, fp)
 
         ## Annotate the tissue
         annotated_eqtls = client.submit(annotate_tissue, annotations, eqtls)
-        future_eqtls.append(annotated_eqtls)
+        #_logger.info(annotated_eqtls.result().head())
+        #future_eqtls.append(annotated_eqtls)
+
+        #annotated_eqtls = client.scatter(annotated_eqtls)
 
         ## Map variant IDs -> rsIDs
-        #mapped_eqtls = client.submit(map_eqtl_rsids, lookup, annotated_eqtls)
+        mapped_eqtls = client.submit(map_eqtl_rsids, lookup, annotated_eqtls)
+        wait(mapped_eqtls)
+        #_logger.info(mapped_eqtls.result().head())
 
         ### Update SNP identifiers to their latest versions
         #merged_snps = client.submit(merge_snps, merge, mapped_eqtls)
@@ -469,8 +514,8 @@ if __name__ == '__main__':
 
     ## Create a local cluster
     client = Client(LocalCluster(
-        n_workers = 4,
-        processes=False
+        n_workers=10,
+        processes=True
     ))
 
     client.run(_initialize_logging, args.verbose)
@@ -482,7 +527,7 @@ if __name__ == '__main__':
     ## Wait on the results
     #client.gather(futures)
 
-    _logger.info('Finished data retrieval')
+    #_logger.info('Finished data retrieval')
 
     client.close()
 
