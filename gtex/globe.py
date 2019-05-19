@@ -39,6 +39,7 @@ _dir_data_processed = 'data/processed'
 ## Extracted eQTLs
 _dir_eqtls = os.path.join(_dir_data_raw, 'GTEx_Analysis_v7_eQTL')
 
+
 ## Output files ##
 
 ## GTEx eQTLs
@@ -54,6 +55,9 @@ _fp_annotations = os.path.join(_dir_data_raw, 'gtex-annotations.tsv')
 ## NCBI dbSNP merge table
 _fp_compressed_dbsnp_table = os.path.join(_dir_data_raw, 'dbsnp-merge-table.tsv.gz')
 _fp_dbsnp_table = os.path.join(_dir_data_raw, 'dbsnp-merge-table.tsv')
+
+## eQTL stats
+_fp_eqtl_stats = os.path.join(_dir_data_processed, 'gtex-eqtl-stats.tsv')
 
 ## In case these don't exist
 try:

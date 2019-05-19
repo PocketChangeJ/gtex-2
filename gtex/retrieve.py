@@ -316,13 +316,14 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    _logger = logging.getLogger(__name__)
     _initialize_logging(args.verbose)
 
     _logger.info('Starting cluster for retrieval step')
 
     ## Create a local cluster
     client = Client(LocalCluster(
-        n_workers = 12,
+        n_workers=8,
         processes=True
     ))
 
