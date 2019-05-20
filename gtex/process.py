@@ -90,7 +90,6 @@ def parse_lookup_table(fp: str = globe._fp_lookup_table) -> pd.DataFrame:
         a mapping of GTEx variant IDs to dbSNP identifiers (rsID)
     """
 
-    #df = dd.read_csv(fp, blocksize='400MB', sep='\t', dtype={'chr': str})
     df = pd.read_csv(fp, sep='\t', dtype={'chr': str})
 
     ## Rename ugly ass column name
@@ -283,7 +282,7 @@ def calculate_eqtl_stats(eqtls: pd.DataFrame) -> Dict[str, str]:
         'tissue_group': eqtls.tissue_group.iloc[0],
         'no_rsid': str(len(eqtls[eqtls.rsid == 0].index)),
         'have_rsid': str(len(eqtls[eqtls.rsid != 0].index)),
-        'new_rsid': str(len(eqtls[eqtls.merged == True].index)),
+        'new_rsid': str(len(eqtls[eqtls.merged].index)),
     }
 
 

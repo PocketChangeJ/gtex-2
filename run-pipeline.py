@@ -65,7 +65,6 @@ if __name__ == '__main__':
 
     ## Wait for retrieval and extraction to finish
     client.gather(futures)
-    exit()
 
     _logger.info('Starting eQTL processing')
 
