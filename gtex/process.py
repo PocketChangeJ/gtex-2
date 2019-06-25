@@ -59,8 +59,8 @@ def parse_annotations(fp: str = globe._fp_annotations) -> pd.DataFrame:
         a dataframe of tissue names and groups
     """
 
-    #df = pd.read_csv(fp, sep='\t')
-    df = ddf.read_csv(fp, sep='\t', dtype={'SMGTC': 'object'})
+    df = pd.read_csv(fp, sep='\t')
+    #df = ddf.read_csv(fp, sep='\t', dtype={'SMGTC': 'object'})
 
     ## These are the tissue groups and names respectively
     df = df[['SMTS', 'SMTSD']]
@@ -222,20 +222,35 @@ def annotate_tissue(
 
     #eqtls = eqtls.drop('filename', axis=1)
 
-    ## The annotations dataframe is small enough that we should be able to compute it
-    ## and loop
-    for annotation in annotations.compute().itertuples():
-        ## Try to match the the filename and annotation
-        if re.search(annotation.tissue_str, filename, re.IGNORECASE):
-            eqtls['tissue'] = annotation.tissue_name
-            eqtls['tissue_group'] = annotation.tissue_group
-            break
+    ## Try and match the filename and annotation
+    annotation = annotations[
+        annotations.tissue_str.map(
+            lambda s: re.search(s+'1', filename, re.IGNORECASE) != None
+        )
+    ]
+
+    if annotation.empty:
+        eqtls['tissue'] = 'unkown'
+        eqtls['tissue_group'] = 'unkown'
 
     else:
-        log._logger.warning('Could not discern tissue type for %s', filename)
+        eqtls['tissue'] = annotation.loc[0, 'tissue_name']
+        eqtls['tissue_group'] = annotation.loc[0, 'tissue_group']
 
-        eqtls['tissue'] = 'unknown'
-        eqtls['tissue_group'] = 'unknown'
+    ## The annotations dataframe is small enough that we should be able to compute it
+    ## and loop
+    #for annotation in annotations.compute().itertuples():
+    #    ## Try to match the the filename and annotation
+    #    if re.search(annotation.tissue_str, filename, re.IGNORECASE):
+    #        eqtls['tissue'] = annotation.tissue_name
+    #        eqtls['tissue_group'] = annotation.tissue_group
+    #        break
+
+    #else:
+    #    log._logger.warning('Could not discern tissue type for %s', filename)
+
+    #    eqtls['tissue'] = 'unknown'
+    #    eqtls['tissue_group'] = 'unknown'
 
     eqtls = eqtls.drop('filename', axis=1)
 
@@ -446,7 +461,7 @@ def run_processing_step() -> None:
     lookup = parse_lookup_table()
     merge = parse_merge_table()
 
-    annotations = client.persist(annotations)
+    #annotations = client.persist(annotations)
     lookup = client.persist(lookup)
     merge = client.persist(merge)
 
@@ -480,6 +495,7 @@ def run_processing_step() -> None:
 
         ## Calculate summary stats for output
         final_eqtls = finalize_eqtls(merged_snps)
+        final_eqtls = client.persist(final_eqtls)
 
         processed_eqtls.append(final_eqtls)
 
@@ -507,7 +523,7 @@ if __name__ == '__main__':
 
     ## Create a local cluster
     #client = Client(LocalCluster(
-    #    n_workers=24,
+    #    n_workers=1,
     #    processes=True,
     #    local_dir='/var/tmp'
     #))
