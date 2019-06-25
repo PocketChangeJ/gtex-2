@@ -225,7 +225,7 @@ def annotate_tissue(
     ## Try and match the filename and annotation
     annotation = annotations[
         annotations.tissue_str.map(
-            lambda s: re.search(s+'1', filename, re.IGNORECASE) != None
+            lambda s: re.search(s, filename, re.IGNORECASE) != None
         )
     ]
 
@@ -234,8 +234,8 @@ def annotate_tissue(
         eqtls['tissue_group'] = 'unkown'
 
     else:
-        eqtls['tissue'] = annotation.loc[0, 'tissue_name']
-        eqtls['tissue_group'] = annotation.loc[0, 'tissue_group']
+        eqtls['tissue'] = annotation['tissue_name'].iloc[0]
+        eqtls['tissue_group'] = annotation['tissue_group'].iloc[0]
 
     ## The annotations dataframe is small enough that we should be able to compute it
     ## and loop
@@ -257,7 +257,7 @@ def annotate_tissue(
     return eqtls
 
 
-def map_eqtl_rsids(lookup: Dict[str, str], eqtls: pd.DataFrame) -> pd.DataFrame:
+def map_eqtl_rsids(lookup: ddf.DataFrame, eqtls: ddf.DataFrame) -> pd.DataFrame:
     """
     Map GTEx variant IDs to canonical reference SNP identifiers (rsID).
 
@@ -271,13 +271,14 @@ def map_eqtl_rsids(lookup: Dict[str, str], eqtls: pd.DataFrame) -> pd.DataFrame:
 
     ## Map to dbSNP references by joining on the variant_id, also attach genomic coords
     #eqtls.loc[:, 'rsid'] = eqtls.variant_id.map(lambda v: lookup.get(v))
-    eqtls = eqtls.join(lookup.set_index('variant_id'), how='left', on='variant_id')
+    #mapped = eqtls.join(lookup.set_index('variant_id'), how='left', on='variant_id')
+    mapped = eqtls.merge(lookup, how='left', on='variant_id')
 
     ## Set missing rsIDs (should be NaN values) to zero
     #eqtls.loc[:, 'rsid'] = eqtls.rsid.fillna('rs0')
-    eqtls['rsid'] = eqtls.rsid.fillna('rs0')
+    mapped['rsid'] = mapped.rsid.fillna('rs0')
 
-    return eqtls
+    return mapped
 
 
 def merge_snps(merge: pd.DataFrame, eqtls: pd.DataFrame) -> pd.DataFrame:
@@ -303,7 +304,8 @@ def merge_snps(merge: pd.DataFrame, eqtls: pd.DataFrame) -> pd.DataFrame:
     ## and set the refSNP ID to the new version if one exists
     #eqtls.loc[:, 'merged'] = eqtls.rsid.map(lambda v: v in merge)
     #eqtls.loc[:, 'rsid'] = eqtls.rsid.map(lambda v: merge.get(v, v))
-    eqtls = eqtls.join(merge.set_index('high'), how='left', on='rsid')
+    #eqtls = eqtls.join(merge.set_index('high'), how='left', on='rsid')
+    eqtls = eqtls.merge(merge, how='left', left_on='rsid', right_on='high')
     eqtls['rsid'] = eqtls.rsid.mask(eqtls.current.notnull(), eqtls.current)
 
     return eqtls
