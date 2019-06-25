@@ -12,6 +12,7 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 from dask.distributed import Client
 from dask.distributed import LocalCluster
+from dask_jobqueue import PBSCluster
 from dask.distributed import get_client
 from functools import partial
 from pathlib import Path
@@ -315,8 +316,13 @@ def finalize_eqtls(eqtls: pd.DataFrame) -> pd.DataFrame:
     ## Add the chr prefix to the chromosome otherwise external tools like liftOver won't
     ## do shit
     eqtls['chromosome'] = 'chr' + eqtls.chromosome
+    ## Rename the variant_id to gtex_id which can be used as UID later on or to track
+    ## provenance aftering refSNP mapping/build lifting
+    eqtls = eqtls.rename(columns={'variant_id': 'gtex_id'})
 
-    return eqtls[['chromosome', 'start', 'rsid', 'gene_id', 'p', 'tissue', 'tissue_group']]
+    return eqtls[[
+        'chromosome', 'start', 'gtex_id', 'rsid', 'gene_id', 'p', 'tissue', 'tissue_group'
+    ]]
 
 
 def calculate_eqtl_stats(eqtls: pd.DataFrame) -> Dict[str, str]:
@@ -447,7 +453,7 @@ def run_processing_step() -> None:
     processed_eqtls = []
     eqtl_stats = []
 
-    log._logger.info('Parsing eQTL datasets')
+    log._logger.info('Parsing eQTL datasets...')
 
     ## For each tissue-specific eQTL dataset...
     for fp in Path(globe._dir_data_raw).iterdir():
@@ -456,7 +462,7 @@ def run_processing_step() -> None:
         if 'signif_variant_gene_pairs.txt' not in fp.name:
             continue
 
-        log._logger.info(f'Working on {Path(fp).name}')
+        log._logger.info(f'Working on {Path(fp).name}...')
 
         ## Parse the eQTLs
         eqtls = parse_eqtls(fp)
@@ -477,7 +483,7 @@ def run_processing_step() -> None:
 
         processed_eqtls.append(final_eqtls)
 
-    log._logger.info('Saving processed datasets')
+    log._logger.info('Finishing processing and saving datasets...')
 
     #save_eqtl_stats(eqtl_stats, globe._fp_eqtl_stats)
     save_eqtls2(processed_eqtls)
@@ -500,11 +506,24 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ## Create a local cluster
-    client = Client(LocalCluster(
-        n_workers=24,
-        processes=True,
-        local_dir='/var/tmp'
-    ))
+    #client = Client(LocalCluster(
+    #    n_workers=24,
+    #    processes=True,
+    #    local_dir='/var/tmp'
+    #))
+    cluster = PBSCluster(
+        name='gtex-eqtls',
+        queue='batch',
+        interface='ib0',
+        cores=3,
+        processes=3,
+        memory='90GB',
+        walltime='00:30:00',
+        local_directory='/var/tmp',
+        env_extra=['cd $PBS_O_WORKDIR']
+    )
+    cluster.scale_up(30)
+    client = Client(cluster)
 
     ## Run the logging init function on each worker and register the callback so
     ## future workers also run the function
