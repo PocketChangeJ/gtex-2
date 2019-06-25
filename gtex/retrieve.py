@@ -9,35 +9,21 @@ from dask.distributed import Client
 from dask.distributed import get_client
 from dask.distributed import Future
 from dask.distributed import LocalCluster
+from functools import partial
 from typing import Dict
 import gzip
 import logging
 import os
 import requests as req
 import shutil
+import stat
 import sys
 import tarfile
 
 from . import globe
+from . import log
 
-_logger = logging.getLogger(__name__)
-
-
-def _initialize_logging(verbose: bool) -> None:
-    """
-    Initialize logging across workers.
-
-    arguments
-        verbose: indicates if verbose logging is on/off
-    """
-
-    ## Add a console logger based on verbosity settings
-    conlog = logging.StreamHandler()
-    conlog.setLevel(logging.INFO if verbose else logging.ERROR)
-    conlog.setFormatter(logging.Formatter('[%(levelname)-7s] %(message)s'))
-
-    _logger.setLevel(logging.INFO if verbose else logging.ERROR)
-    _logger.addHandler(conlog)
+logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
 def _download(url: str, output: str) -> None:
@@ -60,7 +46,7 @@ def _download(url: str, output: str) -> None:
                 fl.write(chunk)
 
     except Exception as e:
-        _logger.error('Request exception occurred: %s', e)
+        log._logger.error('Request exception occurred: %s', e)
         raise
 
 
@@ -90,6 +76,63 @@ def _extract_tar(input: str, output: str) -> None:
         tar.extractall(output)
 
 
+def download_liftover(
+    url: str = globe._url_ucsc_liftover,
+    output: str = globe._exe_liftover,
+    force: bool = True
+) -> str:
+    """
+    Retrieves the UCSC liftOver tool from the UCSC FTP.
+
+    arguments
+        url:    optional url to the archive containing the hg38 genome build chain
+        output: optional output filepath
+    """
+
+    if os.path.exists(output) and not force:
+        log._logger.warning(
+            'The liftOver exe already exists, use force=True to download it'
+        )
+
+        return output
+
+    log._logger.info('Downloading the UCSC liftOver tool')
+
+    _download(url, output)
+
+    ## Make the binary executable
+    os.chmod(output, os.stat(output).st_mode | stat.S_IEXEC)
+
+    return output
+
+
+def download_hg38_chains(
+    url: str = globe._url_ucsc_hg38_chain,
+    output: str = globe._fp_hg38_chain_gz,
+    force: bool = True
+) -> str:
+    """
+    Retrieves the UCSC liftOver chains for converting genome builds from hg19 -> hg38.
+
+    arguments
+        url:    optional url to the archive containing the hg38 genome build chain
+        output: optional output filepath
+    """
+
+    if os.path.exists(output) and not force:
+        log._logger.warning(
+            'The hg38 chain already exists, use force=True to download it'
+        )
+
+        return output
+
+    log._logger.info('Downloading the UCSC hg38 chains')
+
+    _download(url, output)
+
+    return output
+
+
 def download_gtex_eqtls(
     url: str = globe._url_eqtls,
     output: str = globe._fp_compressed_eqtls,
@@ -108,10 +151,10 @@ def download_gtex_eqtls(
     """
 
     if os.path.exists(output) and not force:
-        _logger.warning('GTEx eQTL archive exists, skipping retrieval')
+        log._logger.warning('GTEx eQTL archive exists, skipping retrieval')
         return
 
-    _logger.info('Retrieving GTEx eQTL archive')
+    log._logger.info('Retrieving GTEx eQTL archive')
 
     _download(url, output)
 
@@ -131,10 +174,10 @@ def download_gtex_lookup_table(
     """
 
     if os.path.exists(output) and not force:
-        _logger.warning('GTEx eQTL lookup table exists, skipping retrieval')
+        log._logger.warning('GTEx eQTL lookup table exists, skipping retrieval')
         return
 
-    _logger.info('Retrieving GTEx lookup table')
+    log._logger.info('Retrieving GTEx lookup table')
 
     _download(url, output)
 
@@ -154,16 +197,16 @@ def download_gtex_annotations(
     """
 
     if os.path.exists(output) and not force:
-        _logger.warning('GTEx eQTL annotations exist, skipping retrieval')
+        log._logger.warning('GTEx eQTL annotations exist, skipping retrieval')
         return
 
-    _logger.info('Retrieving GTEx annotations')
+    log._logger.info('Retrieving GTEx annotations')
 
     _download(url, output)
 
 
 def download_dbsnp_merge_table(
-    url: str = globe._url_dbsnp150,
+    url: str = globe._url_dbsnp151,
     output: str = globe._fp_compressed_dbsnp_table,
     force: bool = False
 ) -> None:
@@ -177,10 +220,10 @@ def download_dbsnp_merge_table(
     """
 
     if os.path.exists(output) and not force:
-        _logger.warning('dbSNP merge table exists, skipping retrieval')
+        log._logger.warning('dbSNP merge table exists, skipping retrieval')
         return
 
-    _logger.info('Retrieving NCBI dbSNP merge table')
+    log._logger.info('Retrieving NCBI dbSNP merge table')
 
     _download(url, output)
 
@@ -199,7 +242,7 @@ def decompress_gtex_lookup_table(
         kwargs: the kwargs is just to trick dask for dependency tracking
     """
 
-    _logger.info('Decompressing GTEx lookup table')
+    log._logger.info('Decompressing GTEx lookup table')
 
     _decompress(input, output)
 
@@ -218,7 +261,7 @@ def decompress_dbsnp_merge_table(
         kwargs: the kwargs is just to trick dask for dependency tracking
     """
 
-    _logger.info('Decompressing NCBI dbSNP merge table')
+    log._logger.info('Decompressing NCBI dbSNP merge table')
 
     _decompress(input, output)
 
@@ -237,7 +280,7 @@ def extract_gtex_eqtls(
         kwargs: the kwargs is just to trick dask for dependency tracking
     """
 
-    _logger.info('Extracting GTEx eQTLs')
+    log._logger.info('Extracting GTEx eQTLs')
 
     _extract_tar(input, output)
 
@@ -263,6 +306,8 @@ def run_retrieve_step(client: Client = None) -> Dict[str, Future]:
     compressed_annotations = client.submit(download_gtex_annotations)
     compressed_lookup_table = client.submit(download_gtex_lookup_table)
     compressed_merge_table = client.submit(download_dbsnp_merge_table)
+    compressed_hg38_chains = client.submit(download_hg38_chains)
+    liftover_tool = client.submit(download_liftover)
 
     ## Decompress/extract concurrently
     eqtls = client.submit(extract_gtex_eqtls, depends=compressed_eqtls)
@@ -272,6 +317,7 @@ def run_retrieve_step(client: Client = None) -> Dict[str, Future]:
     merge_table = client.submit(
         decompress_dbsnp_merge_table, depends=compressed_merge_table
     )
+    hg38_chains = client.submit(_decompress, compressed_hg38_chains, globe._fp_hg38_chain)
 
     ## Wait for eQTL extraction to finish
     eqtls.result()
@@ -296,7 +342,9 @@ def run_retrieve_step(client: Client = None) -> Dict[str, Future]:
         'eqtls': tissue_eqtls,
         'annotations': compressed_annotations,
         'lookup_table': lookup_table,
-        'merge_table': merge_table
+        'merge_table': merge_table,
+        'liftover': liftover_tool,
+        'hg38_chains': hg38_chains
     }
 
 
@@ -316,18 +364,22 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    _logger = logging.getLogger(__name__)
-    _initialize_logging(args.verbose)
+    log._logger = logging.getLogger(__name__)
+    log.initialize_logging(verbose=args.verbose)
 
-    _logger.info('Starting cluster for retrieval step')
+    log._logger.info('Starting cluster for retrieval step')
 
     ## Create a local cluster
     client = Client(LocalCluster(
         n_workers=8,
-        processes=True
+        processes=True,
+        local_dir='/var/tmp'
     ))
 
-    client.run(_initialize_logging, args.verbose)
+    ## Run the logging init function on each worker and register the callback so
+    ## future workers also run the function
+    init_logging_partial = partial(log.initialize_logging, verbose=args.verbose)
+    client.register_worker_callbacks(setup=init_logging_partial)
 
     ## Run the data retrieval step
     futures = run_retrieve_step(client)
@@ -335,7 +387,7 @@ if __name__ == '__main__':
     ## Wait on the results
     client.gather(futures)
 
-    _logger.info('Finished data retrieval')
+    log._logger.info('Finished data retrieval')
 
     client.close()
 
