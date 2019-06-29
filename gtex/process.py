@@ -75,7 +75,7 @@ def parse_annotations(fp: str = globe._fp_annotations) -> pd.DataFrame:
     #df.loc[:, 'tissue_str'] = df.tissue_name.str.replace('\(|\)| - ', ' ')
     #df.loc[:, 'tissue_str'] = df.tissue_str.str.replace('\s+', '.*')
     df['tissue_str'] = df.tissue_name.str.replace('\(|\)| - ', ' ')
-    df['tissue_str'] = df.tissue_str.str.replace('\s+', '.*')
+    df['tissue_str'] = df.tissue_str.str.replace('\s+', '.?')
 
     ## Drop tissue group from the tissue name
     #df.loc[:, 'tissue_name'] = df.tissue_name.str.replace('\w+ - ', '')
@@ -234,6 +234,11 @@ def annotate_tissue(
         eqtls['tissue_group'] = 'unkown'
 
     else:
+        ## Select the longest match (prevents us from incorrectly match cortex
+        ## over several brain tissues)
+        #annotation = annotation[annotation.apply(lambda s: len(s)).idxmax()]
+        #annotation = annotation[]
+
         eqtls['tissue'] = annotation['tissue_name'].iloc[0]
         eqtls['tissue_group'] = annotation['tissue_group'].iloc[0]
 
@@ -354,11 +359,12 @@ def calculate_eqtl_stats(eqtls: pd.DataFrame) -> Dict[str, str]:
     """
 
     return {
-        'tissue': eqtls.tissue.iloc[0],
-        'tissue_group': eqtls.tissue_group.iloc[0],
+        'tissue': eqtls.tissue.compute().iloc[0],
+        'tissue_group': eqtls.tissue_group.compute().iloc[0],
+        'variants': str(len(eqtls.variant_id.index)),
         'no_rsid': str(len(eqtls[eqtls.rsid == 0].index)),
-        'have_rsid': str(len(eqtls[eqtls.rsid != 0].index)),
-        'new_rsid': str(len(eqtls[eqtls.merged].index)),
+        'valid_rsid': str(len(eqtls[eqtls.rsid != 0].index)),
+        'merged_rsid': str(len(eqtls[eqtls.current.notnull()].index)),
     }
 
 def _save_dataframe_partition(df: pd.DataFrame, outdir: str = globe._dir_data_processed) -> str:
@@ -442,7 +448,9 @@ def save_eqtl_stats(stats: Dict[str, str], output: str) -> None:
         output: output filepath
     """
 
-    pd.DataFrame(stats).to_csv(
+    df = pd.DataFrame(stats)
+
+    df[['tissue', 'tissue_group', 'variants', 'valid_rsid', 'no_rsid', 'merged_rsid']].to_csv(
         output,
         sep='\t',
         index=False,
@@ -469,6 +477,7 @@ def run_processing_step() -> None:
 
     processed_eqtls = []
     eqtl_stats = []
+    stat_dfs = []
 
     log._logger.info('Parsing eQTL datasets...')
 
@@ -494,6 +503,7 @@ def run_processing_step() -> None:
         merged_snps = merge_snps(merge, mapped_eqtls)
 
         #eqtl_stats.append(calculate_eqtl_stats(merged_snps))
+        stat_dfs.append(client.persist(merged_snps))
 
         ## Calculate summary stats for output
         final_eqtls = finalize_eqtls(merged_snps)
@@ -505,6 +515,10 @@ def run_processing_step() -> None:
 
     #save_eqtl_stats(eqtl_stats, globe._fp_eqtl_stats)
     save_eqtls2(processed_eqtls)
+    save_eqtl_stats(
+        [calculate_eqtl_stats(s) for s in stat_dfs],
+        globe._fp_eqtl_stats
+    )
 
 
 ## This step in the GTEx pipeline can be run individually
@@ -533,14 +547,14 @@ if __name__ == '__main__':
         name='gtex-eqtls',
         queue='batch',
         interface='ib0',
-        cores=3,
-        processes=3,
+        cores=4,
+        processes=4,
         memory='90GB',
         walltime='00:30:00',
         local_directory='/var/tmp',
         env_extra=['cd $PBS_O_WORKDIR']
     )
-    cluster.scale_up(30)
+    cluster.scale_up(40)
     client = Client(cluster)
 
     ## Run the logging init function on each worker and register the callback so

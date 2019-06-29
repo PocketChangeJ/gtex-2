@@ -153,7 +153,7 @@ if __name__ == '__main__':
 
     ## Create a local cluster
     client = Client(LocalCluster(
-        n_workers=20,
+        n_workers=10,
         processes=True,
         local_dir='/var/tmp'
     ))

@@ -32,6 +32,7 @@ _url_ucsc_liftover = 'http://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64.v369
 _url_ucsc_hg38_chain = 'http://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz'
 
 ## Output directories ##
+_dir_data = 'data'
 
 ## Tools
 _dir_data_tools = 'data/tools'
@@ -66,7 +67,7 @@ _fp_compressed_dbsnp_table = os.path.join(_dir_data_raw, 'dbsnp-merge-table.tsv.
 _fp_dbsnp_table = os.path.join(_dir_data_raw, 'dbsnp-merge-table.tsv')
 
 ## eQTL stats
-_fp_eqtl_stats = os.path.join(_dir_data_processed, 'gtex-eqtl-stats.tsv')
+_fp_eqtl_stats = os.path.join(_dir_data, 'gtex-eqtl-stats.tsv')
 
 ## liftOver executable
 _exe_liftover = os.path.join(_dir_data_tools, 'liftOver')
